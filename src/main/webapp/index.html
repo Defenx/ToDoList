@@ -1,0 +1,461 @@
+<html>
+<head>
+    <title>Todo List</title>
+    <link rel="stylesheet" href="css/bootstrap.min.css" type="text/css">
+    <script src="jquery/jquery-3.4.1.min.js"></script>
+    <script src="js/bootstrap.bundle.min.js"></script>
+    <script src="js/module.js"></script>
+    <script>
+
+        let user;
+        let servlet;
+
+        async function auth(servlet, loginId, passId) {
+            let url = servlet.concat('?login=', document.getElementById(loginId).value, '&pass=', document.getElementById(passId).value); 	//without a slash before the servlet map name!
+            let response = await fetch(url);
+
+            if (response.ok) {
+                user = await response.json();
+                document.getElementById("userNameBtn").innerHTML = user.login;
+                getTasks('tasks/today');
+                initPopUpBtns('none', 'none', 'block');
+            } else {
+                let errCode = response.status;
+
+                switch (errCode) {
+                    case 451:
+                        document.getElementsByClassName("text-danger").item(0).innerHTML = "wrong username or password";
+                        break;
+                    case 452:
+                        document.getElementsByClassName("text-danger").item(1).innerHTML = "user already exists";
+                        break;
+                    case 523:
+                        alert("some problem with dao");
+                        initDisplay('block', 'none', 'none');
+                }
+
+                return false;
+            }
+            return true;
+
+        }
+
+        async function getTasks(url) {
+            //without a slash before the servlet map name!
+            let response = await fetch(url);
+
+            if (response.ok) {
+                let tasks = await response.json();
+                createTable(tasks, url);
+                setServlet(url);
+                let stringDate;
+                switch (url) {
+                    case "tasks/today" :
+                        stringDate = getTodayDate();
+                        break;
+                    case "tasks/tomorrow" :
+                        stringDate = getTomorrowDate();
+                        break;
+                    case "tasks/active" :
+                        stringDate = getAfterTomorrowDate();
+                        break;
+                }
+
+                document.getElementsByName('date')[0].value = stringDate.slice(0, 10);
+            } else {
+                alert("some problem with dao");
+            }
+
+        }
+
+        async function modify(url) {
+            if (!checkFormInput()) return;
+            let arr = document.getElementsByName('idTask');
+            let params = '?';
+            for (let i = 0; i < arr.length; i++) {
+                if (arr[i].checked) {
+                    params = params.concat('idTask=', arr[i].value, '&');
+                }
+            }
+            params = params.slice(0, -1);
+            url = url.concat(params);
+            let response = await fetch(url);
+            if (response.ok) {
+                getTasks(servlet);
+            } else {
+                alert("some problem with dao");
+            }
+
+        }
+
+        async function addTask() {
+            let description = document.getElementsByName('description').item(0);
+            let date = document.getElementsByName('date').item(0);
+            let url = 'addTask'.concat('?description=', description.value, '&date=', date.value);
+            let response = await fetch(url);
+            if (response.ok) {
+                getTasks(servlet);
+            } else {
+                alert("some problem with dao");
+                initDisplay('none', 'none', 'none');
+            }
+        }
+
+        function getTodayDate() {
+            return new Date().toISOString();
+        }
+
+        function getTomorrowDate() {
+            let current = new Date();
+            let tomorrow = new Date(current);
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            return tomorrow.toISOString();
+        }
+
+        function getAfterTomorrowDate() {
+            let current = new Date();
+            let afterTomorrow = new Date(current);
+            afterTomorrow.setDate(afterTomorrow.getDate() + 2);
+            return afterTomorrow.toISOString();
+        }
+
+        function checkFormInput() {
+            let tasks = document.getElementsByName('idTask');
+            let checked = tasks.checked;
+            if (!checked) {
+                for (let i = 0; i < tasks.length; i++) {
+                    if (tasks[i].checked) {
+                        checked = true;
+                        break;
+                    }
+                }
+            }
+
+
+            if (!checked) {
+                document.getElementById("errMsg").innerHTML = "No checked tasks";
+                return false;
+            }
+            return true;
+        }
+
+        function createTable(tasks, url) {
+            if (document.getElementById('tasks')) {
+                document.getElementById('tasks').remove();
+            }
+
+
+            let tasksTable = document.createElement("table");
+            tasksTable.setAttribute('id', 'tasks');
+            tasksTable.setAttribute('class', 'table table-bordered');
+            let thead = document.createElement('thead');
+            let titleTr = document.createElement('tr');
+
+            let titleId = document.createElement('td');
+            titleId.innerHTML = "To Check";
+            thead.appendChild(titleId);
+
+            let titleDesc = document.createElement('td');
+            titleDesc.innerHTML = "Description";
+            thead.appendChild(titleDesc);
+
+            if (url === 'tasks/active') {
+                let titleDate = document.createElement('td');
+                titleDate.innerHTML = "Date";
+                thead.appendChild(titleDate);
+            }
+
+            titleTr.appendChild(thead);
+
+            tasksTable.appendChild(titleTr);
+
+            for (let i = 0; i < tasks.length; i++) {
+                let taskTr = document.createElement('tr');
+                let idTd = document.createElement('td');
+                let idInput = document.createElement('input');
+
+                idInput.setAttribute('type', 'checkbox');
+                idInput.setAttribute('name', 'idTask');
+                idInput.setAttribute('value', tasks[i].id);
+
+                idTd.appendChild(idInput);
+                taskTr.appendChild(idTd);
+
+                let tdDescription = document.createElement('td');
+                tdDescription.innerHTML = tasks[i].description;
+
+                taskTr.appendChild(tdDescription);
+
+                if (url === 'tasks/active') {
+                    let tdDate = document.createElement('td');
+                    tdDate.innerHTML = formatDate(Date.parse(tasks[i].date));
+                    taskTr.appendChild(tdDate);
+                }
+
+
+                let tdUserId = document.createElement('td');
+                tdUserId.setAttribute('hidden', 'hidden');
+                tdUserId.innerHTML = tasks[i].userId;
+
+                taskTr.appendChild(tdUserId);
+
+                tasksTable.appendChild(taskTr);
+
+            }
+
+            document.getElementsByClassName('nav nav-tabs').item(0).after(tasksTable);
+
+            initDisplay('none', 'none', 'block');
+
+            let fixBtn = 'none';
+            let moveActiveToBinBtn = 'none';
+            let moveFixedToBinBtn = 'none';
+            let restoreBtn = 'none';
+            let removeBtn = 'none';
+            let addBtn = 'none';
+
+
+            if (url === "tasks/recycleBin") {
+                restoreBtn = 'block';
+                removeBtn = 'block';
+            }
+
+            if (url === "tasks/fixed") {
+                moveFixedToBinBtn = 'block';
+            }
+
+            if (url === "tasks/today" || url === "tasks/tomorrow" || url === "tasks/active") {
+                fixBtn = 'block';
+                moveActiveToBinBtn = 'block';
+            }
+
+            if (user !== undefined && (url === "tasks/today" || url === "tasks/tomorrow" || url === "tasks/active")) {
+                addBtn = 'block';
+            }
+
+            initTasksBtns(fixBtn, moveActiveToBinBtn, moveFixedToBinBtn, restoreBtn, removeBtn, addBtn);
+
+        }
+
+        function setServlet(srl) {
+            servlet = srl;
+
+        }
+
+        function initDisplay(styleLogin, styleRegister, styleTasks) {
+            document.getElementById('login').style.display = styleLogin;
+            document.getElementById('register').style.display = styleRegister;
+            document.getElementById('main').style.display = styleTasks;
+        }
+
+        function initTasksBtns(styleFixBtn, styleMoveActiveToBinBtn, styleMoveFixedToBinBtn, styleRestoreBtn, styleRemoveBtn, styleAddBtn) {
+            document.getElementById('fixBtn').style.display = styleFixBtn;
+            document.getElementById('moveActiveToBinBtn').style.display = styleMoveActiveToBinBtn;
+            document.getElementById('moveFixedToBinBtn').style.display = styleMoveFixedToBinBtn;
+            document.getElementById('restoreBtn').style.display = styleRestoreBtn;
+            document.getElementById('removeBtn').style.display = styleRemoveBtn;
+            document.getElementById('addBtn').style.display = styleAddBtn;
+        }
+
+        function start() {
+            initDisplay('none', 'none', 'none');
+            initPopUpBtns('block', 'block', 'none')
+        }
+
+        function login(loginId, passId) {
+            auth('login', loginId, passId);
+
+        }
+
+        function register(loginId, passId) {
+            auth('register', loginId, passId);
+        }
+
+        function loginPopUpClicked() {
+            initDisplay('block', 'none', 'none');
+            clearAuthFormData(
+                document.getElementById("logUsername"),
+                document.getElementById("logPass"),
+                document.getElementsByClassName("text-danger").item(0)
+            )
+
+        }
+
+        function registerPopUpClicked() {
+            initDisplay('none', 'block', 'none');
+            clearAuthFormData(
+                document.getElementById("regUsername"),
+                document.getElementById("regPass"),
+                document.getElementsByClassName("text-danger").item(1)
+            )
+
+        }
+
+        function initPopUpBtns(login, register, logout) {
+            let btns = document.getElementsByClassName('dropdown-item');
+            btns.item(0).style.display = login;
+            btns.item(1).style.display = register;
+            btns.item(2).style.display = logout;
+        }
+
+        function clearAuthFormData(login, pass, err) {
+            login.value = "";
+            pass.value = "";
+            err.innerHTML = "";
+        }
+
+        function formatDate(date) {
+            let d = new Date(date),
+                month = '' + (d.getMonth() + 1),
+                day = '' + d.getDate(),
+                year = d.getFullYear();
+
+            if (month.length < 2)
+                month = '0' + month;
+            if (day.length < 2)
+                day = '0' + day;
+
+            return [year, month, day].join('-');
+        }
+    </script>
+</head>
+<body onload="start()">
+<div id="header">
+    <div class="container-fluid">
+        <div class="dropdown">
+            <button id="userNameBtn" type="button" class="btn btn-primary dropdown-toggle" data-toggle="dropdown">
+                Guest
+            </button>
+            <div class="dropdown-menu">
+                <button class="dropdown-item" onclick="loginPopUpClicked()">Login</button>
+                <button class="dropdown-item" onclick="registerPopUpClicked()">Register</button>
+                <form action="logout">
+                    <button type="submit" class="dropdown-item"
+                            onclick="initDisplay('none','none','none');initPopUpBtns('block','block','none');">Logout
+                    </button>
+                </form>
+
+            </div>
+        </div>
+    </div>
+</div>
+<div style="display: none" id="login">
+    <h3 class="text-center text-white pt-5">Login form</h3>
+    <div class="container">
+        <div id="login-row" class="row justify-content-center align-items-center">
+            <div id="login-column" class="col-md-6">
+                <div id="login-box" class="col-md-12">
+                    <h3 class="text-center text-info">Login</h3>
+                    <div class="form-group">
+                        <label for="logUsername" class="text-info">Username:</label><br>
+                        <input type="text" name="login" id="logUsername" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label for="logPass" class="text-info">Password:</label><br>
+                        <input type="password" name="pass" id="logPass" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <input type="submit" name="submit" class="btn btn-info btn-md" value="submit"
+                               onclick="login('logUsername','logPass')">
+                    </div>
+                    <div class="text-danger">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<div style="display: none" id="register">
+    <h3 class="text-center text-white pt-5">register form</h3>
+    <div class="container">
+        <div id="register-row" class="row justify-content-center align-items-center">
+            <div id="register-column" class="col-md-6">
+                <div id="register-box" class="col-md-12">
+                    <h3 class="text-center text-info">Register</h3>
+                    <div class="form-group">
+                        <label for="regUsername" class="text-info">Username:</label><br>
+                        <input type="text" name="login" id="regUsername" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label for="regPass" class="text-info">Password:</label><br>
+                        <input type="password" name="pass" id="regPass" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <input type="submit" name="submit" class="btn btn-info btn-md" value="submit"
+                               onclick="register('regUsername','regPass')">
+                    </div>
+
+                    <div class="text-danger">
+
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<div style="display: none" id="main" class="container h-75">
+
+    <ul class="nav nav-tabs">
+        <li class="nav-item">
+            <a id="todayLink" class="nav-link" onclick="getTasks('tasks/today');">
+                Today
+            </a>
+        </li>
+        <li class="nav-item">
+            <a id="tomorrowLink" class="nav-link" onclick="getTasks('tasks/tomorrow');">
+                Tomorrow
+            </a>
+        </li>
+        <li class="nav-item">
+            <a id="all_activeLink" class="nav-link" onclick="getTasks('tasks/active');">Someday</a>
+        </li>
+        <li class="nav-item">
+            <a id="fixedLink" class="nav-link" onclick="getTasks('tasks/fixed');">Fixed</a>
+        </li>
+        <li class="nav-item">
+            <a id="recycle_binLink" class="nav-link" onclick="getTasks('tasks/recycleBin');">Recycle Bin</a>
+        </li>
+    </ul>
+
+    <p class="text-danger" id="errMsg"></p>
+    <button id="fixBtn" type="submit" class="button" onclick="modify('fixTasks')">fix</button>
+    <button id="moveActiveToBinBtn" type="submit" class="button" onclick="modify('moveActiveToRecBin')">remove</button>
+    <button id="moveFixedToBinBtn" type="submit" class="button" onclick="modify('moveFixedToRecBin')">remove</button>
+    <button id="restoreBtn" type="submit" class="button" onclick="modify('restoreTasks')">restore</button>
+    <button id="removeBtn" type="submit" class="button" onclick="modify('deleteTasks')">remove</button>
+
+    <button id="addBtn" type="button" class="btn btn-primary" data-toggle="modal" data-target="#exampleModal">
+        Add Task
+    </button>
+
+    <!-- Modal -->
+    <div class="modal fade" id="exampleModal" tabindex="-1" role="dialog" aria-labelledby="exampleModalLabel"
+         aria-hidden="true">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="exampleModalLabel">Add task form</h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <input id="addCommandName" type="hidden" name="command">
+                    <input type="text" placeholder="input description" name="description">
+                    <input type="date" name="date">
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-primary" data-dismiss="modal" type="submit" onclick="addTask()">Add task
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<div id="footer" class="footer">
+    <div class="container">
+        <span class="text-muted">Developed by Jaraxuss</span>
+    </div>
+</div>
+</body>
+</html>
